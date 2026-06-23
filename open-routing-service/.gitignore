@@ -1,0 +1,35 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Test / coverage artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Mypy / Ruff caches
+.mypy_cache/
+.ruff_cache/
+
+# Editor
+.idea/
+.vscode/
+
+# Real env files (never commit)
+.env
+.env.local
+.env.*.local

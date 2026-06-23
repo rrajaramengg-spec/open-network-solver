@@ -1,0 +1,162 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "open-routing-service"
+version = "0.1.0"
+description = "FastAPI backend for closest-facility routing over OSM/pgRouting."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "open-network-solver maintainers" },
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Framework :: FastAPI",
+]
+
+# Runtime dependencies — derived from proposal.md Impact section.
+# Excluded by design: mcp[cli], fastmcp (no MCP in v1 — design D5);
+# arcgis (proprietary — conflicts with OSS-only constraint).
+dependencies = [
+  "fastapi>=0.118,<1.0",
+  "uvicorn[standard]>=0.34,<1.0",
+  "sqlalchemy[asyncio]>=2.0.36,<3.0",
+  "asyncpg>=0.30,<1.0",
+  "psycopg2-binary>=2.9,<3.0",
+  "alembic>=1.14,<2.0",
+  "pydantic>=2.10,<3.0",
+  "pydantic-settings>=2.7,<3.0",
+  "redis[hiredis]>=5.2,<6.0",
+  "slowapi>=0.1.9,<1.0",
+  "async-lru>=2.0,<3.0",
+  "prometheus-client>=0.21,<1.0",
+  "python-json-logger>=3.2,<4.0",
+  "httpx>=0.28,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.9,<1.0",
+  "mypy>=1.13,<2.0",
+  "pytest>=8.3,<9.0",
+  "pytest-asyncio>=0.24,<1.0",
+  "pytest-cov>=6.0,<7.0",
+  "testcontainers[postgres,redis]>=4.9,<5.0",
+  "psycopg[binary]>=3.1,<4.0",        # psycopg3 for testcontainers driver
+  "docker>=7.0,<8.0",                 # docker-available guard in tests
+  "respx>=0.22,<1.0",                 # HTTPX request mocking for unit tests
+  "freezegun>=1.5,<2.0",
+  "types-pyyaml>=6.0,<7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/<org>/open-network-solver"
+Issues = "https://github.com/<org>/open-network-solver/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/open_routing_service"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/open_routing_service",
+  "alembic",
+  "alembic.ini",
+  "README.md",
+  "pyproject.toml",
+]
+
+# ----------------------------------------------------------------------------
+# Tooling
+# ----------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # isort
+  "B",        # bugbear
+  "UP",       # pyupgrade
+  "C4",       # comprehensions
+  "SIM",      # simplify
+  "PT",       # pytest style
+  "ASYNC",    # async-correctness
+  "RUF",
+]
+ignore = [
+  "E501",     # line length handled by formatter
+  "B008",     # FastAPI Depends() in defaults is idiomatic
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B017", "PT011", "PT012"]
+"alembic/versions/**" = ["E402", "I001"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["alembic.*", "slowapi.*", "async_lru.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = [
+  "-ra",
+  "--strict-markers",
+  "--strict-config",
+  "--cov=open_routing_service",
+  "--cov-report=term-missing",
+  "--cov-report=xml",
+]
+asyncio_mode = "auto"
+markers = [
+  "e2e: integration / end-to-end tests that require a real Docker stack (skip in unit-only CI)",
+  "slow: tests that take more than 5 seconds",
+]
+filterwarnings = [
+  "error",
+  "ignore::DeprecationWarning:asyncpg.*",
+  "ignore::DeprecationWarning:slowapi.*",
+  "ignore::DeprecationWarning:testcontainers.*",
+  "ignore::DeprecationWarning:starlette.*",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src/open_routing_service"]
+omit = ["src/open_routing_service/__main__.py"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = true
+exclude_lines = [
+  "pragma: no cover",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]

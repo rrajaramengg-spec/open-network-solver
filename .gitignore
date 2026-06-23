@@ -1,0 +1,104 @@
+# =============================================================================
+# open-network-solver — root .gitignore
+# =============================================================================
+# Sub-projects have their own .gitignore (open-routing-service/,
+# open-routing-service-ui/, infra/). This file ignores root-level artefacts
+# plus internal-only docs that should not ship in the public repo.
+
+# -----------------------------------------------------------------------------
+# OS / editor noise
+# -----------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.code-workspace
+
+# -----------------------------------------------------------------------------
+# Secrets / env
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# -----------------------------------------------------------------------------
+# Python
+# -----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.venv/
+venv/
+
+# -----------------------------------------------------------------------------
+# Node / build
+# -----------------------------------------------------------------------------
+node_modules/
+dist/
+build/
+.next/
+.cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# -----------------------------------------------------------------------------
+# Logs — all operation logs (ETL runs, spikes, test captures) live under logs/
+# -----------------------------------------------------------------------------
+*.log
+logs/*
+!logs/.gitkeep
+
+# -----------------------------------------------------------------------------
+# Test / coverage output
+# -----------------------------------------------------------------------------
+coverage/
+*.lcov
+test-results/
+playwright-report/
+tests-output.txt
+migration-tests.txt
+
+# -----------------------------------------------------------------------------
+# OSM / data artefacts
+# -----------------------------------------------------------------------------
+*.osm.pbf
+*.mbtiles
+*.osm.bz2
+data/
+
+# -----------------------------------------------------------------------------
+# Internal-only — not shipped in the public repo
+# -----------------------------------------------------------------------------
+# AI / spec / agent tooling
+openspec/
+AGENTS.md
+.github/
+context.md
+
+# Internal docs — ignore everything under docs/ then whitelist the public
+# files referenced from README.md.
+#
+# Git rule: you cannot re-include a file inside an excluded directory, so
+# we re-include the runbooks/ directory itself before ignoring its contents
+# and whitelisting the single public runbook.
+/docs/*
+!/docs/architecture.md
+!/docs/runbooks/
+/docs/runbooks/*
+!/docs/runbooks/local-operations.md

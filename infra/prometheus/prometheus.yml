@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    env: ${ENV:-dev}
+
+scrape_configs:
+  - job_name: open-routing-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['open-routing-service:8000']
+        labels:
+          service: routing
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']

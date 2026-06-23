@@ -1,0 +1,80 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "title": "open-routing-service",
+  "uid": "ons-routing",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Requests per second",
+      "targets": [
+        {
+          "expr": "sum(rate(routing_request_total[1m]))",
+          "legendFormat": "rps"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 }
+    },
+    {
+      "type": "stat",
+      "title": "Error rate (5m)",
+      "targets": [
+        {
+          "expr": "sum(rate(routing_request_total{status_code=~\"5..\"}[5m])) / sum(rate(routing_request_total[5m]))",
+          "legendFormat": "5xx %"
+        }
+      ],
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency p50/p95/p99 by endpoint",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by (endpoint, le) (rate(routing_request_duration_seconds_bucket[5m])))", "legendFormat": "p50 {{endpoint}}" },
+        { "expr": "histogram_quantile(0.95, sum by (endpoint, le) (rate(routing_request_duration_seconds_bucket[5m])))", "legendFormat": "p95 {{endpoint}}" },
+        { "expr": "histogram_quantile(0.99, sum by (endpoint, le) (rate(routing_request_duration_seconds_bucket[5m])))", "legendFormat": "p99 {{endpoint}}" }
+      ],
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cache hit ratio",
+      "targets": [
+        {
+          "expr": "sum(rate(routing_cache_hit_total[5m])) / (sum(rate(routing_cache_hit_total[5m])) + sum(rate(routing_cache_miss_total[5m])))",
+          "legendFormat": "hit ratio"
+        }
+      ],
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Results-count distribution",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(closest_facility_results_count_bucket[5m])))",
+          "legendFormat": "p50 K"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(closest_facility_results_count_bucket[5m])))",
+          "legendFormat": "p95 K"
+        }
+      ],
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 6 }
+    },
+    {
+      "type": "stat",
+      "title": "Replica lag (seconds)",
+      "targets": [{ "expr": "routing_replica_lag_seconds" }],
+      "gridPos": { "x": 0, "y": 12, "w": 6, "h": 4 }
+    },
+    {
+      "type": "stat",
+      "title": "Cache errors (5m)",
+      "targets": [{ "expr": "sum(increase(routing_cache_error_total[5m]))" }],
+      "gridPos": { "x": 6, "y": 12, "w": 6, "h": 4 }
+    }
+  ]
+}

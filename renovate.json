@@ -1,0 +1,61 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":dependencyDashboard"
+  ],
+  "timezone": "UTC",
+  "schedule": ["after 1am on the first day of the month"],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "rangeStrategy": "pin",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["after 1am on the first day of the month"]
+  },
+  "packageRules": [
+    {
+      "description": "Group Docker base images and open one PR per quarter (Jan/Apr/Jul/Oct).",
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "groupName": "container images",
+      "schedule": ["after 1am on the first day of January, April, July, October"],
+      "commitMessageTopic": "container images",
+      "reviewers": ["team:platform"]
+    },
+    {
+      "description": "Always bump Renovate-managed digests so we stay pinned even on tag overwrites.",
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "matchDatasources": ["docker"],
+      "pinDigests": true
+    },
+    {
+      "description": "Security advisories bypass the monthly schedule.",
+      "matchUpdateTypes": ["security"],
+      "schedule": "at any time",
+      "labels": ["dependencies", "security"]
+    },
+    {
+      "description": "Python deps — keep PRs minor + patch only by default; major versions require manual review.",
+      "matchManagers": ["pip_requirements", "pep621"],
+      "groupName": "python deps",
+      "matchUpdateTypes": ["minor", "patch"]
+    },
+    {
+      "description": "JS deps for the UI — same pattern.",
+      "matchManagers": ["npm"],
+      "groupName": "js deps",
+      "matchUpdateTypes": ["minor", "patch"]
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"]
+  },
+  "dockerfile": {
+    "fileMatch": ["(^|/)Dockerfile$", "(^|/).*\\.Dockerfile$"]
+  },
+  "docker-compose": {
+    "fileMatch": ["(^|/)docker-compose\\.ya?ml$", "(^|/)infra/.*compose\\.ya?ml$"]
+  }
+}

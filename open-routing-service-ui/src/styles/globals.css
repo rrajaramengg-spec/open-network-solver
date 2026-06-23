@@ -1,0 +1,26 @@
+/* MapLibre base styles — imported into a cascade layer so Tailwind utility
+   classes (e.g. `absolute`, `h-full`) always win over MapLibre's own
+   `.maplibregl-map { position: relative }` rule. */
+@import 'maplibre-gl/dist/maplibre-gl.css' layer(vendor);
+@import 'tailwindcss';
+
+/* Project-wide tokens (Tailwind v4 uses CSS-first config). */
+@theme {
+  --color-rank-1: #ef4444; /* red-500 */
+  --color-rank-2: #f97316; /* orange-500 */
+  --color-rank-3: #eab308; /* yellow-500 */
+  --color-rank-4: #84cc16; /* lime-500 */
+  --color-rank-5: #14b8a6; /* teal-500 */
+  --color-rank-6: #0ea5e9; /* sky-500 */
+  --color-rank-7: #6366f1; /* indigo-500 */
+  --color-rank-8: #a855f7; /* purple-500 */
+  --color-rank-9: #ec4899; /* pink-500 */
+  --color-rank-10: #f43f5e; /* rose-500 */
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}

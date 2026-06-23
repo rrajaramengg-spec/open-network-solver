@@ -1,0 +1,309 @@
+# Closest-facility routing stack — Phase 1 foundation.
+#
+# Image tags are placeholders; pin to @sha256:<digest> per
+# docs/runbooks/image-bumps.md before any staging/prod deploy.
+#
+# Per design D1, this stack runs on dedicated non-default ports so it does
+# not collide with any pre-existing Postgres / Redis / Nominatim instance.
+
+name: open-network-solver
+
+networks:
+  routing-net:
+    driver: bridge
+
+volumes:
+  postgres-routing-primary-data: {}
+  postgres-routing-replica-data: {}
+  redis-data: {}
+  nominatim-data: {}
+  nominatim-flatnode: {}
+  osm-data: {}
+  prometheus-data: {}
+  grafana-data: {}
+
+services:
+  postgres-routing-primary:
+    image: pgrouting/pgrouting:16-3.5-3.7.3   # TODO(image-bumps): pin @sha256:...
+    container_name: ons-postgres-primary
+    networks: [routing-net]
+    environment:
+      POSTGRES_DB: routing
+      POSTGRES_USER: routing
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Phase 3 enables streaming replication; Phase 1 leaves it default.
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_senders=4"
+      - "-c"
+      - "wal_keep_size=512MB"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "work_mem=64MB"
+      - "-c"
+      - "maintenance_work_mem=512MB"
+      # Country-scale ETL load profile (scalable-routing-etl D6): a large
+      # max_wal_size keeps the in-database noding + osm2pgsql slim load from
+      # checkpoint-thrashing while millions of WAL records are written.
+      - "-c"
+      - "max_wal_size=4GB"
+    ports:
+      - "${POSTGRES_PRIMARY_PORT:-55432}:5432"
+    # Country-scale maintenance (parallel index builds / VACUUM) allocates
+    # dynamic-shared-memory segments; the 64 MB Docker default /dev/shm is too
+    # small and trips "could not resize shared memory segment ... No space left
+    # on device". 1 GB comfortably covers the in-database noding + VACUUM.
+    shm_size: 1gb
+    volumes:
+      - postgres-routing-primary-data:/var/lib/postgresql/data
+      - osm-data:/data/osm:ro
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - 'pg_isready -U routing -d routing'
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  # Streaming-replication read-replica.
+  # Wired into the routing service from Phase 3 (design D14).
+  # In Phase 1 the container can stay stopped; bring it up with
+  #   docker compose up postgres-routing-replica
+  # after primary has run `pg_basebackup` once (see docs/phases/phase-3-service.md).
+  postgres-routing-replica:
+    image: pgrouting/pgrouting:16-3.5-3.7.3   # TODO(image-bumps): pin @sha256:...
+    container_name: ons-postgres-replica
+    profiles: ["replica", "service"]
+    depends_on:
+      postgres-routing-primary:
+        condition: service_healthy
+    networks: [routing-net]
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      PRIMARY_HOST: postgres-routing-primary
+    ports:
+      - "${POSTGRES_REPLICA_PORT:-55433}:5432"
+    volumes:
+      - postgres-routing-replica-data:/var/lib/postgresql/data
+    command:
+      - "postgres"
+      - "-c"
+      - "hot_standby=on"
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - 'pg_isready -U routing && psql -U routing -d routing -tAc "SELECT pg_is_in_recovery();" | grep -qi "^t$"'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine                       # TODO(image-bumps): pin @sha256:...
+    container_name: ons-redis
+    networks: [routing-net]
+    ports:
+      - "${REDIS_PORT:-56379}:6379"
+    volumes:
+      - redis-data:/data
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+      - "--maxmemory"
+      - "256mb"
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  nominatim:
+    image: mediagis/nominatim:4.5               # TODO(image-bumps): pin @sha256:...
+    container_name: ons-nominatim
+    profiles: ["nominatim", "service"]
+    networks: [routing-net]
+    environment:
+      PBF_PATH: /nominatim/data.osm.pbf
+      NOMINATIM_PASSWORD: ${NOMINATIM_PASSWORD:?set NOMINATIM_PASSWORD in .env}
+      THREADS: "${NOMINATIM_THREADS:-4}"
+      IMPORT_STYLE: address
+    ports:
+      - "${NOMINATIM_PORT:-58080}:8080"
+    volumes:
+      - nominatim-data:/var/lib/postgresql/14/main
+      - nominatim-flatnode:/nominatim/flatnode
+      - osm-data:/nominatim:ro
+    shm_size: 1gb
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/status.php?format=json || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      start_period: 60s
+
+  # One-shot OSM ETL: osm2pgsql flex -> in-database noding -> cost columns
+  # -> facilities -> VACUUM ANALYZE -> atomic schema swap.
+  # Profile-gated: `docker compose --profile etl run --rm etl <args>`.
+  etl:
+    build:
+      context: ./etl
+      dockerfile: Dockerfile
+    image: ons-etl:dev
+    container_name: ons-etl
+    profiles: ["etl"]
+    depends_on:
+      postgres-routing-primary:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [routing-net]
+    environment:
+      ROUTING_DB_HOST: postgres-routing-primary
+      ROUTING_DB_PORT: "5432"
+      ROUTING_DB_USER: routing
+      ROUTING_DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      ROUTING_DB_NAME: routing
+      REDIS_URL: redis://redis:6379/0
+      LOG_FORMAT: "${LOG_FORMAT:-json}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      # Country-scale load profile (scalable-routing-etl D6): node locations are
+      # held in an on-disk flat-nodes file on the osm-data volume so node-cache
+      # RAM stays bounded; --drop deletes it on success.
+      ROUTING_FLAT_NODES: "${ROUTING_FLAT_NODES:-/data/osm/flat-nodes.bin}"
+      OSM2PGSQL_CACHE_MB: "${OSM2PGSQL_CACHE_MB:-2048}"
+    volumes:
+      - osm-data:/data/osm
+      - ./etl:/app:ro
+    # No restart policy — this is a one-shot job; the user invokes it explicitly.
+
+  # FastAPI backend (Phase 3).
+  # `docker compose --profile service up open-routing-service`
+  open-routing-service:
+    build:
+      context: ../open-routing-service
+      dockerfile: Dockerfile
+    image: ons-routing-service:dev
+    container_name: ons-routing-service
+    profiles: ["service"]
+    depends_on:
+      postgres-routing-primary:
+        condition: service_healthy
+      postgres-routing-replica:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [routing-net]
+    environment:
+      ROUTING_DB_HOST: postgres-routing-primary
+      ROUTING_DB_PORT: "5432"
+      ROUTING_DB_REPLICA_HOST: postgres-routing-replica
+      ROUTING_DB_REPLICA_PORT: "5432"
+      ROUTING_DB_USER: routing
+      ROUTING_DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      ROUTING_DB_NAME: routing
+      REDIS_URL: redis://redis:6379/0
+      LOG_FORMAT: "${LOG_FORMAT:-json}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      CORS_ALLOW_ORIGINS: "${CORS_ALLOW_ORIGINS:-*}"
+      RATE_LIMIT_PER_MINUTE: "${RATE_LIMIT_PER_MINUTE:-60}"
+    ports:
+      - "${ROUTING_SERVICE_PORT:-58000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # React + MapLibre SPA (Phase 4).
+  # `docker compose --profile service up open-routing-service-ui`
+  open-routing-service-ui:
+    build:
+      context: ../open-routing-service-ui
+      dockerfile: Dockerfile
+      args:
+        VITE_ROUTING_API_URL: "${UI_ROUTING_API_URL:-http://localhost:58000}"
+        VITE_NOMINATIM_URL: "${UI_NOMINATIM_URL:-http://localhost:58080}"
+        VITE_TILE_URL: "${UI_TILE_URL:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}"
+    image: ons-routing-ui:dev
+    container_name: ons-routing-ui
+    profiles: ["service", "ui"]
+    depends_on:
+      open-routing-service:
+        condition: service_healthy
+    networks: [routing-net]
+    ports:
+      - "${UI_PORT:-58081}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  # Observability (Phase 5).
+  # `docker compose --profile observability up prometheus grafana`
+  prometheus:
+    image: prom/prometheus:v2.55.0    # TODO(image-bumps): pin @sha256:...
+    container_name: ons-prometheus
+    profiles: ["observability", "service"]
+    networks: [routing-net]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-59090}:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/ready || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+  grafana:
+    image: grafana/grafana:11.3.0      # TODO(image-bumps): pin @sha256:...
+    container_name: ons-grafana
+    profiles: ["observability", "service"]
+    depends_on: [prometheus]
+    networks: [routing-net]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-53000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+
+  # Chaos profile (Phase 5).
+  # `docker compose --profile chaos up pumba-routing-killer`
+  # Pumba injects faults into running containers — kill, pause, netem.
+  pumba-routing-killer:
+    image: gaiaadm/pumba:0.10.2
+    container_name: ons-pumba-killer
+    profiles: ["chaos"]
+    networks: [routing-net]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      - "--log-level=info"
+      - "--random"
+      - "kill"
+      - "--signal=SIGKILL"
+      - "re2:ons-routing-service"

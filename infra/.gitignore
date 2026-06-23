@@ -1,0 +1,4 @@
+# Real env files MUST NEVER be committed.
+.env
+.env.local
+.env.*.local
