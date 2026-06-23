@@ -65,16 +65,20 @@ test.describe('enriched facility rendering + data-driven filter', () => {
     );
   });
 
-  test('the facility-type dropdown is populated from the categories endpoint', async ({
-    page,
-  }) => {
+  test('the facility-type filter is data-driven and searchable', async ({ page }) => {
     await page.goto('/');
-    const select = page.getByLabel('Facility type');
-    // Always-present sentinel + one option per ingested category (data-driven).
-    await expect(select.getByRole('option', { name: 'All facilities' })).toBeAttached();
-    await expect(select.getByRole('option', { name: 'Pharmacy (30)' })).toBeAttached();
-    await expect(select.getByRole('option', { name: 'Hospital (12)' })).toBeAttached();
-    await expect(select.getByRole('option', { name: 'Fire Station (5)' })).toBeAttached();
+    const input = page.getByLabel('Facility type');
+    // Opens on focus (`immediate`); options come from the categories endpoint.
+    await input.click();
+    await expect(page.getByRole('option', { name: 'All facilities' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'Pharmacy (30)' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'Hospital (12)' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'Fire Station (5)' })).toBeVisible();
+
+    // Typing narrows the list (searchable combobox, not a 1000-row dropdown).
+    await input.fill('pharm');
+    await expect(page.getByRole('option', { name: 'Pharmacy (30)' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'Hospital (12)' })).toHaveCount(0);
   });
 
   test('map-click → Find renders the enriched result (name + category)', async ({ page }) => {

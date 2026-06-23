@@ -12,6 +12,10 @@ OSM &nbsp;→&nbsp; PostGIS + pgRouting &nbsp;→&nbsp; FastAPI &nbsp;→&nbsp; 
 [![Docker](https://img.shields.io/badge/docker-compose-2496ED.svg)](https://docs.docker.com/compose/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
 
+<br/>
+
+![open-network-solver main page — closest-facility routing over OpenStreetMap with MapLibre](assets/main-page.png)
+
 </div>
 
 ---
