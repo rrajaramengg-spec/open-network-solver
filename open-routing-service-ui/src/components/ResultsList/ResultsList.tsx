@@ -1,5 +1,6 @@
 import { useSearchStore } from '@/store';
 import { rankColor } from '@/utils/rankColors';
+import { humanizeCategory } from '@/utils/categoryIcon';
 
 /** Ranked card list of facilities; click to select / isolate on the map. */
 export function ResultsList(): JSX.Element {
@@ -49,8 +50,15 @@ export function ResultsList(): JSX.Element {
                 </span>
                 <div className="text-sm">
                   <div className="font-medium text-slate-100">
-                    Facility #{r.facility_id}
+                    {r.name != null && r.name.length > 0
+                      ? r.name
+                      : `Facility #${r.facility_id}`}
                   </div>
+                  {r.category != null && r.category.length > 0 ? (
+                    <div className="text-xs text-sky-300">
+                      {humanizeCategory(r.category)}
+                    </div>
+                  ) : null}
                   <div className="text-slate-400">
                     {Math.round(r.total_distance_m)} m · {Math.round(r.total_time_s)} s
                   </div>

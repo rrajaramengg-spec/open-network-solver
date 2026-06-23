@@ -18,6 +18,9 @@
     "audit:lighthouse": "lhci autorun"
   },
   "dependencies": {
+    "@headlessui/react": "^2.2.10",
+    "@mapbox/maki": "^8.2.0",
+    "@maplibre/maplibre-gl-geocoder": "^1.9.4",
     "maplibre-gl": "^4.7.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

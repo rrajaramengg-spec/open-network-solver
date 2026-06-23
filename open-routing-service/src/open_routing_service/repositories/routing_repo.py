@@ -59,6 +59,17 @@ _CALL_SQL = text(
 )
 
 
+# Precomputed per-category counts (design D2/D4) — a summary-table read, never
+# an aggregate over the whole facility catalog.
+_CATEGORIES_SQL = text(
+    """
+    SELECT category, count
+    FROM routing.facility_categories
+    ORDER BY count DESC, category ASC
+    """
+)
+
+
 class RoutingRepository:
     """Calls ``SELECT * FROM closest_facility(...)`` on the replica."""
 
@@ -119,6 +130,33 @@ class RoutingRepository:
 
         # Parse GeoJSON in Python — keeps SQL portable.
         return [_row_to_result(dict(row)) for row in rows]
+
+    async def list_categories(self) -> list[dict[str, Any]]:
+        """Return precomputed ``[{category, count}]`` from the summary table.
+
+        Reads ``routing.facility_categories`` (built at ETL write-time) — a
+        dozens-of-rows summary, never an aggregate over the whole catalog
+        (design D2/D4). An empty catalog yields ``[]`` (not an error).
+
+        Raises:
+            RoutingTimeoutError:        DB call exceeded ``timeout_s``.
+            RoutingDBUnavailableError:  connection pool / replica unreachable.
+        """
+        try:
+            async with asyncio.timeout(self._timeout_s):
+                async with self._engine.connect() as conn:
+                    result = await conn.execute(_CATEGORIES_SQL)
+                    rows = result.mappings().all()
+        except (TimeoutError, asyncio.TimeoutError) as exc:
+            LOG.warning("facility_categories timeout (>%ss)", self._timeout_s)
+            raise RoutingTimeoutError(
+                f"categories query exceeded {self._timeout_s} s"
+            ) from exc
+        except OperationalError as exc:
+            LOG.error("replica unavailable: %s", exc)
+            raise RoutingDBUnavailableError("routing replica unavailable") from exc
+
+        return [dict(row) for row in rows]
 
 
 def _row_to_result(d: dict[str, Any]) -> dict[str, Any]:

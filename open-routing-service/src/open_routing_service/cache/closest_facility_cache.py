@@ -80,6 +80,14 @@ class ClosestFacilityCache:
             f"{lat:.4f}:{lon:.4f}:{buffer_m:g}:{k}:{cost_mode}:{filter_sha}"
         )
 
+    def categories_key(self) -> str:
+        """Cache key for the facility-categories summary (``cfc:`` namespace).
+
+        Keyed on ``function_version`` and flushed at the ETL swap alongside the
+        ``cf:*`` namespace (best-effort, design D4).
+        """
+        return f"cfc:{self._function_version}"
+
     # --- get / set -------------------------------------------------------- #
 
     async def get(self, key: str) -> dict[str, Any] | None:

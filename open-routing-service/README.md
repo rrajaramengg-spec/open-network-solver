@@ -8,12 +8,22 @@ See [`docs/phases/phase-3-service.md`](../docs/phases/phase-3-service.md) for th
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/v1/closest-facility` | Top-K nearest facilities with route geometry + cost |
+| `POST` | `/v1/closest-facility` | Top-K nearest facilities, each with route geometry, travel cost, and the facility as a GeoJSON `Feature` (`facility_geojson`: Point + `name`/`category`/`tags`) |
+| `GET`  | `/v1/facility-categories` | Precomputed `(category, count)` list (from the `routing.facility_categories` summary table) that drives the data-driven facility-type filter — **no per-request catalog scan** |
 | `GET`  | `/healthz`             | Liveness |
 | `GET`  | `/readyz`              | Readiness — checks primary pool + replica `pgr_version()` + soft Redis ping. **Does NOT check Nominatim** (browser calls it directly). |
 | `GET`  | `/metrics`             | Prometheus exposition |
 | `GET`  | `/v1/etl-status`       | Latest `etl_runs` row + ETL freshness |
 | `GET`  | `/docs`, `/redoc`, `/openapi.json` | Interactive API docs |
+
+> **Enriched response (`facility-details-and-autocomplete`):** each
+> `closest-facility` result item additionally carries `name`, `category`,
+> `tags`, and `facility_geojson` (an RFC 7946 Feature with a Point geometry).
+> The stored `facilities.category` column is populated at ETL write-time by the
+> `IMMUTABLE` `public.facility_category(tags)` helper (existing rows are
+> backfilled by migration); `closest_facility()` is `function_version v8`.
+> Closest-facility responses are cached under `cf:*` and facility-category
+> summaries under `cfc:*` — both best-effort and flushed on the ETL swap.
 
 ## Layout
 

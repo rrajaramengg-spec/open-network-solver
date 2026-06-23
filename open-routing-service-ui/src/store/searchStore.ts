@@ -20,6 +20,7 @@ import {
 } from '@/api';
 import type {
   CostMode,
+  FacilityCategory,
   FacilityResult,
   FacilityType,
   IncidentPoint,
@@ -45,6 +46,8 @@ export interface SearchState {
   results: FacilityResult[];
   cacheHit: boolean;
   selectedRank: number | null;
+  // -- catalog --
+  categories: FacilityCategory[];
   // -- actions --
   setIncident: (p: IncidentPoint | null) => void;
   setBuffer: (metres: number) => void;
@@ -53,6 +56,7 @@ export interface SearchState {
   setFacilityType: (t: FacilityType) => void;
   setFacilityFilter: (filter: Record<string, string>) => void;
   setSelectedRank: (rank: number | null) => void;
+  loadCategories: () => Promise<void>;
   submit: () => Promise<void>;
   clear: () => void;
   dismissError: () => void;
@@ -75,7 +79,12 @@ function ensureClient(): ClosestFacilityClient {
 }
 
 function filterFromType(type: FacilityType): Record<string, string> {
-  return type === 'all' ? {} : { amenity: type };
+  if (type === 'all') return {};
+  // `facility_category()` derives most categories from `amenity`, but
+  // `ambulance_station` comes from the `emergency` tag — match it precisely so
+  // the jsonb `tags @> filter` containment test in `closest_facility()` works.
+  if (type === 'ambulance_station') return { emergency: 'ambulance_station' };
+  return { amenity: type };
 }
 
 // Defaults per spec (`closest-facility` UI defaults):
@@ -94,6 +103,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   results: [],
   cacheHit: false,
   selectedRank: null,
+  categories: [],
 
   setIncident: (p) => set({ incident: p, selectedRank: null }),
   setBuffer: (metres) =>
@@ -103,6 +113,17 @@ export const useSearchStore = create<SearchState>((set, get) => ({
   setFacilityType: (t) => set({ facilityType: t, facilityFilter: filterFromType(t) }),
   setFacilityFilter: (filter) => set({ facilityFilter: filter }),
   setSelectedRank: (rank) => set({ selectedRank: rank }),
+
+  async loadCategories() {
+    try {
+      const client = ensureClient();
+      const resp = await client.getFacilityCategories();
+      set({ categories: resp.categories });
+    } catch {
+      // Non-critical: the dropdown degrades to just "All facilities".
+      set({ categories: [] });
+    }
+  },
 
   async submit() {
     const state = get();

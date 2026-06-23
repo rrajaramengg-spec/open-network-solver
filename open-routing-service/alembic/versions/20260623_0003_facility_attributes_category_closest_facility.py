@@ -94,6 +94,9 @@ _DROP_COLUMN_SQL = "ALTER TABLE routing.facilities DROP COLUMN IF EXISTS categor
 # v8 — projects facility name / stored category / tags / geom (design D3).
 # ---------------------------------------------------------------------------
 _FUNCTION_SQL = """\
+DROP FUNCTION IF EXISTS public.closest_facility(
+    geometry, double precision, jsonb, integer, text
+);
 CREATE OR REPLACE FUNCTION public.closest_facility(
     incident        geometry(Point, 4326),
     buffer_m        double precision,
@@ -271,6 +274,9 @@ $func$;
 
 # v7 body (no facility attribute columns) — restored verbatim on downgrade.
 _FUNCTION_SQL_V7 = """\
+DROP FUNCTION IF EXISTS public.closest_facility(
+    geometry, double precision, jsonb, integer, text
+);
 CREATE OR REPLACE FUNCTION public.closest_facility(
     incident        geometry(Point, 4326),
     buffer_m        double precision,

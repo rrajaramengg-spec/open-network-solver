@@ -38,6 +38,7 @@ class _Repo(Protocol):
         cost_mode: str,
         facility_filter: dict[str, Any],
     ) -> list[dict[str, Any]]: ...
+    async def list_categories(self) -> list[dict[str, Any]]: ...
 
 
 class _Cache(Protocol):
@@ -51,6 +52,7 @@ class _Cache(Protocol):
         cost_mode: str,
         facility_filter: dict[str, Any],
     ) -> str: ...
+    def categories_key(self) -> str: ...
     async def get(self, key: str) -> dict[str, Any] | None: ...
     async def set(self, key: str, value: dict[str, Any]) -> bool: ...
 
@@ -119,3 +121,21 @@ class ClosestFacilityService:
         await self._cache.set(key, {"results": results})
 
         return results, False
+
+    async def list_categories(self) -> tuple[list[dict[str, Any]], bool]:
+        """Return ``(categories, cache_hit)`` for the live POI catalog.
+
+        Reads the precomputed summary via the repo (no per-request catalog
+        scan), with a best-effort ``cfc:`` cache in front. An empty catalog
+        yields ``([], …)`` — never an error.
+        """
+        key = self._cache.categories_key()
+
+        cached = await self._cache.get(key)
+        if cached is not None:
+            LOG.debug("categories cache hit", extra={"key": key})
+            return cached.get("categories", []), True
+
+        categories = await self._repo.list_categories()
+        await self._cache.set(key, {"categories": categories})
+        return categories, False

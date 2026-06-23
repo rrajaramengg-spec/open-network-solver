@@ -15,7 +15,7 @@ createRoot(rootEl).render(
   <React.StrictMode>
     <App
       routingApiUrl={import.meta.env.VITE_ROUTING_API_URL}
-      nominatimUrl={import.meta.env.VITE_NOMINATIM_URL}
+      photonUrl={import.meta.env.VITE_PHOTON_URL ?? 'https://photon.komoot.io'}
       tileUrl={import.meta.env.VITE_TILE_URL}
     />
   </React.StrictMode>,

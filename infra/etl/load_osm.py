@@ -375,7 +375,7 @@ def _swap(env: dict[str, str], *, pbf_filename: str, sha: str, started_at: dt.da
 
 
 def _flush_redis_cache() -> None:
-    """Delete every Redis key matching ``cf:*``.
+    """Delete every Redis key matching ``cf:*`` and ``cfc:*``.
 
     Best-effort: a flush failure is logged but does NOT fail the ETL (the data
     is already correct in Postgres; stale cache entries will eventually expire
@@ -386,10 +386,13 @@ def _flush_redis_cache() -> None:
     """
     redis_url = os.environ.get("REDIS_URL")
     if not redis_url:
-        LOG.warning("REDIS_URL unset; skipping cf:* flush")
+        LOG.warning("REDIS_URL unset; skipping cf:*/cfc:* flush")
         return
 
-    LOG.info("flushing Redis cf:* namespace", extra={"redis_url": _redact_url(redis_url)})
+    LOG.info(
+        "flushing Redis cf:*/cfc:* namespaces",
+        extra={"redis_url": _redact_url(redis_url)},
+    )
     # `redis-cli` ships in the alpine base image of the redis service container,
     # but NOT in the ETL container. So we run it via `docker exec` from the host?
     # No — keep it simple: pipe SCAN | DEL through a single subprocess pipeline
@@ -444,19 +447,23 @@ def _flush_via_socket(redis_url: str) -> None:
             send(sock, "AUTH", password)
         send(sock, "SELECT", str(db))
 
-        # SCAN cursor + cf:* match; DEL each batch.
-        cursor = "0"
+        # SCAN cursor + DEL each batch, for both the routing (cf:*) and the
+        # facility-categories (cfc:*) namespaces so a swap invalidates both.
         total_deleted = 0
-        while True:
-            resp = send(sock, "SCAN", cursor, "MATCH", "cf:*", "COUNT", "500").decode("utf-8")
-            # Minimal RESP parse for an array of [cursor, [keys...]].
-            cursor, keys = _parse_scan(resp)
-            if keys:
-                send(sock, "DEL", *keys)
-                total_deleted += len(keys)
-            if cursor == "0":
-                break
-        LOG.info("cf:* flush done", extra={"deleted": total_deleted})
+        for pattern in ("cf:*", "cfc:*"):
+            cursor = "0"
+            while True:
+                resp = send(
+                    sock, "SCAN", cursor, "MATCH", pattern, "COUNT", "500"
+                ).decode("utf-8")
+                # Minimal RESP parse for an array of [cursor, [keys...]].
+                cursor, keys = _parse_scan(resp)
+                if keys:
+                    send(sock, "DEL", *keys)
+                    total_deleted += len(keys)
+                if cursor == "0":
+                    break
+        LOG.info("cf:*/cfc:* flush done", extra={"deleted": total_deleted})
 
 
 def _parse_scan(resp: str) -> tuple[str, list[str]]:

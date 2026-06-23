@@ -1,25 +1,19 @@
 import { useState } from 'react';
-import type { NominatimClient } from '@/api';
 import { useSearchStore } from '@/store';
-import { AddressSearch } from './AddressSearch';
 import { BufferDistanceInput } from './BufferDistanceInput';
 import { FacilityCountInput } from './FacilityCountInput';
 import { CostModeToggle, FacilityTypeSelect } from './FacilityTypeSelect';
 
-export interface SearchWidgetProps {
-  nominatim: NominatimClient;
-}
-
 /** Side-panel widget: inputs + Find button. */
-export function SearchWidget({ nominatim }: SearchWidgetProps): JSX.Element {
+export function SearchWidget(): JSX.Element {
   const incident = useSearchStore((s) => s.incident);
   const bufferMeters = useSearchStore((s) => s.bufferMeters);
   const k = useSearchStore((s) => s.k);
   const costMode = useSearchStore((s) => s.costMode);
   const facilityType = useSearchStore((s) => s.facilityType);
+  const categories = useSearchStore((s) => s.categories);
   const isLoading = useSearchStore((s) => s.isLoading);
 
-  const setIncident = useSearchStore((s) => s.setIncident);
   const setBuffer = useSearchStore((s) => s.setBuffer);
   const setK = useSearchStore((s) => s.setK);
   const setCostMode = useSearchStore((s) => s.setCostMode);
@@ -37,14 +31,12 @@ export function SearchWidget({ nominatim }: SearchWidgetProps): JSX.Element {
       aria-label="Search widget"
     >
       <h2 className="text-lg font-semibold">Closest Facility</h2>
-      <AddressSearch
-        client={nominatim}
-        onSelect={(lat, lon) => setIncident({ lat, lon })}
-      />
       <div className="rounded border border-slate-700 bg-slate-950 p-3 text-xs">
         <div className="font-medium text-slate-300">Incident</div>
         {incident === null ? (
-          <div className="mt-1 text-slate-400">Click the map or pick an address.</div>
+          <div className="mt-1 text-slate-400">
+            Search an address on the map or click the map.
+          </div>
         ) : (
           <div className="mt-1 font-mono text-slate-200">
             {incident.lat.toFixed(5)}, {incident.lon.toFixed(5)}
@@ -58,7 +50,11 @@ export function SearchWidget({ nominatim }: SearchWidgetProps): JSX.Element {
         onUnitChange={setUnit}
       />
       <FacilityCountInput k={k} onChange={setK} />
-      <FacilityTypeSelect value={facilityType} onChange={setFacilityType} />
+      <FacilityTypeSelect
+        value={facilityType}
+        onChange={setFacilityType}
+        categories={categories}
+      />
       <CostModeToggle value={costMode} onChange={setCostMode} />
       <div className="mt-auto flex gap-2">
         <button

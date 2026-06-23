@@ -30,6 +30,8 @@ from open_routing_service.models.api import (
     ClosestFacilityRequest,
     ClosestFacilityResponse,
     ErrorResponse,
+    FacilityCategoriesResponse,
+    FacilityCategory,
     FacilityResult,
 )
 from open_routing_service.observability import (
@@ -123,6 +125,58 @@ async def closest_facility(
     return ClosestFacilityResponse(
         request_id=rid,
         results=[FacilityResult(**r) for r in results],
+        cache_hit=cache_hit,
+    )
+
+
+@router.get(
+    "/facility-categories",
+    response_model=FacilityCategoriesResponse,
+    responses={
+        429: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+        504: {"model": ErrorResponse},
+    },
+)
+@limiter.limit(f"{_settings.rate_limit_per_minute}/minute")
+async def facility_categories(
+    request: Request,  # required by SlowAPI for IP-based limiting
+    service: ClosestFacilityService = Depends(get_service),
+) -> FacilityCategoriesResponse:
+    endpoint = "/v1/facility-categories"
+    started = time.perf_counter()
+    rid = get_request_id()
+
+    try:
+        categories, cache_hit = await service.list_categories()
+    except RoutingTimeoutError as exc:
+        _record(endpoint, "error", status.HTTP_504_GATEWAY_TIMEOUT, started)
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=ErrorResponse(
+                request_id=rid, error_code=exc.error_code, message=exc.message
+            ).model_dump(),
+        ) from exc
+    except RoutingDBUnavailableError as exc:
+        _record(endpoint, "error", status.HTTP_503_SERVICE_UNAVAILABLE, started)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=ErrorResponse(
+                request_id=rid, error_code=exc.error_code, message=exc.message
+            ).model_dump(),
+        ) from exc
+
+    if cache_hit:
+        cache_hit_total.inc()
+    else:
+        cache_miss_total.inc()
+    _record(endpoint, "ok", status.HTTP_200_OK, started)
+
+    items = [FacilityCategory(**c) for c in categories]
+    return FacilityCategoriesResponse(
+        request_id=rid,
+        categories=items,
+        total=sum(c.count for c in items),
         cache_hit=cache_hit,
     )
 

@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { createNominatimClient } from '@/api';
+import { useEffect } from 'react';
+import { useSearchStore } from '@/store';
 import {
   ErrorToast,
   MapView,
@@ -10,13 +10,18 @@ import {
 
 export interface AppProps {
   routingApiUrl: string;
-  nominatimUrl: string;
+  photonUrl: string;
   tileUrl: string;
 }
 
 /** Top-level layout: header · widget · map · results · toast. */
-export function App({ routingApiUrl, nominatimUrl, tileUrl }: AppProps): JSX.Element {
-  const nominatim = useMemo(() => createNominatimClient(nominatimUrl), [nominatimUrl]);
+export function App({ routingApiUrl, photonUrl, tileUrl }: AppProps): JSX.Element {
+  const loadCategories = useSearchStore((s) => s.loadCategories);
+
+  // Populate the data-driven facility-type dropdown on first render.
+  useEffect(() => {
+    void loadCategories();
+  }, [loadCategories]);
 
   return (
     <div className="flex h-screen flex-col bg-slate-950 text-slate-100">
@@ -27,9 +32,9 @@ export function App({ routingApiUrl, nominatimUrl, tileUrl }: AppProps): JSX.Ele
         <RunbookBadge routingApiUrl={routingApiUrl} />
       </header>
       <main className="flex min-h-0 flex-1">
-        <SearchWidget nominatim={nominatim} />
+        <SearchWidget />
         <div className="relative flex-1">
-          <MapView tileUrl={tileUrl} />
+          <MapView tileUrl={tileUrl} photonUrl={photonUrl} />
         </div>
         <div className="w-72 shrink-0 overflow-y-auto border-l border-slate-800 bg-slate-900/95">
           <ResultsList />

@@ -12,6 +12,7 @@ import type {
   ClosestFacilityRequest,
   ClosestFacilityResponse,
   ErrorResponse,
+  FacilityCategoriesResponse,
 } from '@/types/routing';
 
 /** Mapping of backend error_code → user-friendly message. */
@@ -60,6 +61,10 @@ export interface ClosestFacilityClient {
     request: ClosestFacilityRequest,
     options?: { signal?: AbortSignal },
   ): Promise<ClosestFacilityResponse>;
+  /** Fetch the precomputed POI-category summary for the data-driven filter. */
+  getFacilityCategories(
+    options?: { signal?: AbortSignal },
+  ): Promise<FacilityCategoriesResponse>;
 }
 
 export function createClosestFacilityClient(baseUrl: string): ClosestFacilityClient {
@@ -83,6 +88,39 @@ export function createClosestFacilityClient(baseUrl: string): ClosestFacilityCli
       }
 
       // Try to parse the structured envelope; fall back to a generic message.
+      let envelope: ErrorResponse | { detail?: ErrorResponse } | null = null;
+      try {
+        envelope = (await resp.json()) as ErrorResponse | { detail?: ErrorResponse };
+      } catch {
+        envelope = null;
+      }
+      const e: Partial<ErrorResponse> =
+        envelope && 'error_code' in envelope
+          ? (envelope as ErrorResponse)
+          : (envelope as { detail?: ErrorResponse } | null)?.detail ?? {};
+      const code =
+        e?.error_code ??
+        (resp.status === 429 ? 'rate_limited' : `http_${resp.status}`);
+      const message =
+        ERROR_MESSAGES[code] ?? e?.message ?? `Request failed (HTTP ${resp.status}).`;
+      throw new RoutingApiError(code, message, resp.status, e?.request_id ?? requestId);
+    },
+
+    async getFacilityCategories(options) {
+      const requestId = newRequestId();
+      const resp = await fetch(`${trimmed}/v1/facility-categories`, {
+        method: 'GET',
+        headers: {
+          'X-Request-Id': requestId,
+          Accept: 'application/json',
+        },
+        signal: options?.signal,
+      });
+
+      if (resp.ok) {
+        return (await resp.json()) as FacilityCategoriesResponse;
+      }
+
       let envelope: ErrorResponse | { detail?: ErrorResponse } | null = null;
       try {
         envelope = (await resp.json()) as ErrorResponse | { detail?: ErrorResponse };

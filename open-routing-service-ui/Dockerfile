@@ -11,9 +11,11 @@ WORKDIR /build
 # Env vars baked in at build time (Vite resolves VITE_* statically).
 ARG VITE_ROUTING_API_URL=http://localhost:58000
 ARG VITE_NOMINATIM_URL=http://localhost:58080
+ARG VITE_PHOTON_URL=https://photon.komoot.io
 ARG VITE_TILE_URL=https://tile.openstreetmap.org/{z}/{x}/{y}.png
 ENV VITE_ROUTING_API_URL=$VITE_ROUTING_API_URL \
     VITE_NOMINATIM_URL=$VITE_NOMINATIM_URL \
+    VITE_PHOTON_URL=$VITE_PHOTON_URL \
     VITE_TILE_URL=$VITE_TILE_URL
 
 COPY package.json package-lock.json* ./

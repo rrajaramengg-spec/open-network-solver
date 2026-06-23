@@ -20,6 +20,7 @@ volumes:
   nominatim-flatnode: {}
   osm-data: {}
   prometheus-data: {}
+  photon-index: {}
   grafana-data: {}
 
 services:
@@ -150,6 +151,34 @@ services:
       retries: 6
       start_period: 60s
 
+  # Photon geocoder (Apache-2.0) — search-as-you-type address autocomplete for
+  # the UI's maplibre-gl-geocoder control (design D5/D6). Self-hosted on a
+  # non-default port; the browser calls it directly (never proxied through the
+  # routing API). On first start the container fetches a prebuilt Photon index
+  # (set COUNTRY_CODE to pull a country extract instead of the planet dump).
+  # Dev defaults to the public demo (https://photon.komoot.io); enable this for
+  # self-hosted/prod via `docker compose --profile photon up photon`.
+  photon:
+    image: rtuszik/photon-docker:latest         # TODO(image-bumps): pin @sha256:...
+    container_name: ons-photon
+    profiles: ["photon"]
+    networks: [routing-net]
+    environment:
+      # Limit the index download to a single country (e.g. "us", "de"); leave
+      # empty for the full planet index (large).
+      COUNTRY_CODE: "${PHOTON_COUNTRY_CODE:-}"
+    ports:
+      - "${PHOTON_PORT:-52322}:2322"
+    volumes:
+      - photon-index:/photon/photon_data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS 'http://localhost:2322/api?q=test' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      start_period: 120s
+    restart: unless-stopped
+
   # One-shot OSM ETL: osm2pgsql flex -> in-database noding -> cost columns
   # -> facilities -> VACUUM ANALYZE -> atomic schema swap.
   # Profile-gated: `docker compose --profile etl run --rm etl <args>`.
@@ -234,6 +263,7 @@ services:
       args:
         VITE_ROUTING_API_URL: "${UI_ROUTING_API_URL:-http://localhost:58000}"
         VITE_NOMINATIM_URL: "${UI_NOMINATIM_URL:-http://localhost:58080}"
+        VITE_PHOTON_URL: "${UI_PHOTON_URL:-https://photon.komoot.io}"
         VITE_TILE_URL: "${UI_TILE_URL:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}"
     image: ons-routing-ui:dev
     container_name: ons-routing-ui

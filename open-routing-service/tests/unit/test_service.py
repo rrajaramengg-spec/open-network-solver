@@ -22,18 +22,25 @@ def _fake_cache(*, get_returns: dict | None = None,
                 set_returns: bool = True) -> MagicMock:
     c = MagicMock()
     c.build_key = MagicMock(return_value="cf:v1:key")
+    c.categories_key = MagicMock(return_value="cfc:v1")
     c.get = AsyncMock(return_value=get_returns)
     c.set = AsyncMock(return_value=set_returns)
     return c
 
 
 def _fake_repo(*, find_returns: list[dict] | None = None,
-               find_raises: BaseException | None = None) -> MagicMock:
+               find_raises: BaseException | None = None,
+               list_returns: list[dict] | None = None,
+               list_raises: BaseException | None = None) -> MagicMock:
     r = MagicMock()
     if find_raises is not None:
         r.find_closest = AsyncMock(side_effect=find_raises)
     else:
         r.find_closest = AsyncMock(return_value=find_returns or [])
+    if list_raises is not None:
+        r.list_categories = AsyncMock(side_effect=list_raises)
+    else:
+        r.list_categories = AsyncMock(return_value=list_returns or [])
     return r
 
 
@@ -119,3 +126,45 @@ class TestCacheErrorTolerance:
         results, cache_hit = await svc.find_closest(**_BASE_ARGS)
         assert cache_hit is False
         assert len(results) == 1  # still returned successfully
+
+
+class TestListCategories:
+    @pytest.mark.asyncio
+    async def test_cache_miss_reads_repo_and_writes_back(self) -> None:
+        cache = _fake_cache(get_returns=None)
+        rows = [{"category": "fire_station", "count": 3},
+                {"category": "hospital", "count": 1}]
+        repo = _fake_repo(list_returns=rows)
+        svc = ClosestFacilityService(repo=repo, cache=cache)
+
+        categories, cache_hit = await svc.list_categories()
+
+        assert cache_hit is False
+        assert categories == rows
+        repo.list_categories.assert_awaited_once_with()
+        cache.set.assert_awaited_once_with("cfc:v1", {"categories": rows})
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_skips_repo(self) -> None:
+        rows = [{"category": "school", "count": 9}]
+        cache = _fake_cache(get_returns={"categories": rows})
+        repo = _fake_repo(list_returns=[])
+        svc = ClosestFacilityService(repo=repo, cache=cache)
+
+        categories, cache_hit = await svc.list_categories()
+
+        assert cache_hit is True
+        assert categories == rows
+        repo.list_categories.assert_not_awaited()
+        cache.set.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_empty_catalog_returns_empty_list(self) -> None:
+        cache = _fake_cache(get_returns=None)
+        repo = _fake_repo(list_returns=[])
+        svc = ClosestFacilityService(repo=repo, cache=cache)
+
+        categories, cache_hit = await svc.list_categories()
+
+        assert categories == []
+        assert cache_hit is False

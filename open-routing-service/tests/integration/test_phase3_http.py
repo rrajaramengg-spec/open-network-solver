@@ -200,6 +200,35 @@ class TestErrorPaths:
 
 
 # ---------------------------------------------------------------------------
+# Facility categories (precomputed summary table)
+# ---------------------------------------------------------------------------
+
+
+class TestFacilityCategories:
+    @pytest.mark.asyncio
+    async def test_returns_categories_with_counts(self, app_client) -> None:
+        resp = await app_client.get(
+            "/v1/facility-categories", headers={"X-Request-Id": "cat-1"}
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["request_id"] == "cat-1"
+        assert resp.headers["x-request-id"] == "cat-1"
+        cats = {c["category"]: c["count"] for c in body["categories"]}
+        # Fixture network-tiny has 2 fire_station + 1 hospital.
+        assert cats.get("fire_station") == 2
+        assert cats.get("hospital") == 1
+        assert body["total"] == 3
+
+    @pytest.mark.asyncio
+    async def test_repeat_call_is_cache_hit(self, app_client) -> None:
+        await app_client.get("/v1/facility-categories")
+        resp = await app_client.get("/v1/facility-categories")
+        assert resp.status_code == 200
+        assert resp.json()["cache_hit"] is True
+
+
+# ---------------------------------------------------------------------------
 # /healthz + /readyz
 # ---------------------------------------------------------------------------
 

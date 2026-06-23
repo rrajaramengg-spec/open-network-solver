@@ -6,8 +6,16 @@ import {
 import type { ClosestFacilityClient } from '@/api';
 import { RoutingApiError } from '@/api';
 
-function makeFakeClient(impl: ClosestFacilityClient['findClosest']): ClosestFacilityClient {
-  return { findClosest: impl };
+function makeFakeClient(
+  impl: ClosestFacilityClient['findClosest'],
+  categories: ClosestFacilityClient['getFacilityCategories'] = async () => ({
+    request_id: 'x',
+    categories: [],
+    total: 0,
+    cache_hit: false,
+  }),
+): ClosestFacilityClient {
+  return { findClosest: impl, getFacilityCategories: categories };
 }
 
 function resetStore() {

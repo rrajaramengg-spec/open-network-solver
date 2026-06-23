@@ -120,6 +120,26 @@ class ClosestFacilityResponse(BaseModel):
     cache_hit: bool = False
 
 
+class FacilityCategory(BaseModel):
+    """One ``{category, count}`` row of the live POI catalog summary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    category: str
+    count: int
+
+
+class FacilityCategoriesResponse(BaseModel):
+    """Body for ``200 GET /v1/facility-categories`` (precomputed summary)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str
+    categories: list[FacilityCategory]
+    total: int
+    cache_hit: bool = False
+
+
 # ---------------------------------------------------------------------------
 # Error envelope
 # ---------------------------------------------------------------------------

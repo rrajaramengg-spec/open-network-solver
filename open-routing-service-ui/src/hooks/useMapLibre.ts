@@ -12,7 +12,7 @@
  *     attach sources/layers in their own `useEffect`s.
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import maplibregl, { type Map as MapLibreMap, type MapMouseEvent } from 'maplibre-gl';
 
 export interface UseMapLibreOptions {
@@ -33,6 +33,12 @@ export interface UseMapLibreResult {
   containerRef: React.RefObject<HTMLDivElement | null>;
   /** The underlying Map; null before first render completes. */
   mapRef: React.RefObject<MapLibreMap | null>;
+  /**
+   * `true` once the map has fired `load`. Controls/layers that have no state
+   * dependency to re-run on (e.g. the geocoder control) can depend on this so
+   * they attach only after `mapRef.current` is populated.
+   */
+  mapReady: boolean;
 }
 
 export function useMapLibre(opts: UseMapLibreOptions): UseMapLibreResult {
@@ -40,6 +46,7 @@ export function useMapLibre(opts: UseMapLibreOptions): UseMapLibreResult {
   const mapRef = useRef<MapLibreMap | null>(null);
   const onClickRef = useRef(opts.onClick);
   const onMoveEndRef = useRef(opts.onMoveEnd);
+  const [mapReady, setMapReady] = useState(false);
 
   // Keep handler refs in sync without re-creating the map.
   useEffect(() => {
@@ -83,6 +90,7 @@ export function useMapLibre(opts: UseMapLibreOptions): UseMapLibreResult {
     map.on('moveend', () => {
       onMoveEndRef.current?.(map);
     });
+    map.on('load', () => setMapReady(true));
 
     mapRef.current = map;
 
@@ -95,11 +103,12 @@ export function useMapLibre(opts: UseMapLibreOptions): UseMapLibreResult {
       ro.disconnect();
       map.remove();
       mapRef.current = null;
+      setMapReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.tileUrl]);
 
-  return { containerRef, mapRef };
+  return { containerRef, mapRef, mapReady };
 }
 
 /** Convenience: fit the map to a list of [lng, lat] points with sane padding. */

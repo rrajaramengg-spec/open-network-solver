@@ -75,4 +75,32 @@ describe('<ResultsList>', () => {
     render(<ResultsList />);
     expect(screen.getByText(/served from cache/i)).toBeInTheDocument();
   });
+
+  it('renders the facility name and humanised category when present', () => {
+    reset({
+      results: [
+        {
+          facility_id: 9, rank: 1, total_cost: 100,
+          total_distance_m: 100, total_time_s: 10, route_geojson: null,
+          name: 'Engine 7', category: 'fire_station',
+        },
+      ],
+    });
+    render(<ResultsList />);
+    expect(screen.getByText('Engine 7')).toBeInTheDocument();
+    expect(screen.getByText('Fire Station')).toBeInTheDocument();
+  });
+
+  it('falls back to "Facility #<id>" when the name is absent', () => {
+    reset({
+      results: [
+        {
+          facility_id: 42, rank: 1, total_cost: 100,
+          total_distance_m: 100, total_time_s: 10, route_geojson: null,
+        },
+      ],
+    });
+    render(<ResultsList />);
+    expect(screen.getByText('Facility #42')).toBeInTheDocument();
+  });
 });

@@ -1,4 +1,3 @@
-export { AddressSearch, type AddressSearchProps } from './AddressSearch';
 export {
   BufferDistanceInput,
   type BufferDistanceInputProps,
@@ -13,4 +12,4 @@ export {
   type CostModeToggleProps,
   type FacilityTypeSelectProps,
 } from './FacilityTypeSelect';
-export { SearchWidget, type SearchWidgetProps } from './SearchWidget';
+export { SearchWidget } from './SearchWidget';

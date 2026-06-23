@@ -1,6 +1,6 @@
 # open-routing-service-ui
 
-React 19 + Vite + MapLibre GL JS single-page app for the closest-facility workflow. Interactive map + side widget for inputs + ranked result rendering. Calls Nominatim **directly from the browser** (design D6) — never proxied through the API.
+React 19 + Vite + MapLibre GL JS single-page app for the closest-facility workflow. Interactive map + side widget for inputs + ranked result rendering. Address autocomplete uses [`@maplibre/maplibre-gl-geocoder`](https://github.com/maplibre/maplibre-gl-geocoder) backed by **Photon**, called **directly from the browser** (design D6) — never proxied through the API. (Nominatim's public usage policy forbids autocomplete, so it is not used for search-as-you-type.)
 
 See [`docs/phases/phase-4-ui.md`](../docs/phases/phase-4-ui.md) for the full Phase 4 walkthrough and [`docs/architecture.md`](../docs/architecture.md) for the consolidated architecture brief.
 
@@ -11,12 +11,13 @@ See [`docs/phases/phase-4-ui.md`](../docs/phases/phase-4-ui.md) for the full Pha
 | `<MapView>` | MapLibre GL JS canvas + basemap + child layers via `useMapLibre` hook |
 | `<IncidentLayer>` | Incident marker + click-to-set handler |
 | `<RouteLayer>` | Top-K route polylines; selected route in a distinct stroke via filter mutation |
-| `<FacilityLayer>` | Ranked facility markers with 1..K badge labels |
-| `<SearchWidget>` | Address search + buffer + K + facility-type + cost-mode + Find button |
-| `<AddressSearch>` | Debounced Nominatim autocomplete (300 ms, AbortController) |
+| `<FacilityLayer>` | Category-specific facility symbols (Maki glyphs) at the real `facility_geojson` Point + 1..K rank badge; click opens a MapLibre `Popup` with name/category/distance/time/tags |
+| `<AccessLegLayer>` | Thin **dashed** connector from each route's graph-terminal vertex to its facility Point (design D9) |
+| `<GeocoderControl>` | `maplibre-gl-geocoder` map control backed by the Photon adapter; `result` → `setIncident`; ODbL attribution |
+| `<SearchWidget>` | Buffer + K + facility-type + cost-mode + Find button (address autocomplete lives in the map's `<GeocoderControl>`) |
 | `<BufferDistanceInput>` | Slider with ft↔m toggle, default 500 ft (152.4 m) |
 | `<FacilityCountInput>` | Stepper, default K=1, range 1–10 |
-| `<FacilityTypeSelect>` | Maps "all/fire/police/EMS/hospital" → `{amenity: ...}` filter |
+| `<FacilityTypeSelect>` | Data-driven — options come from `GET /v1/facility-categories` (`all` + every ingested category) |
 | `<CostModeToggle>` | Distance vs. travel-time toggle |
 | `<ResultsList>` | Ranked card list with click-to-zoom / click-to-isolate, cache-hit indicator |
 | `<RunbookBadge>` | Polls `/readyz` every 30 s and surfaces service + ETL freshness |
@@ -28,7 +29,7 @@ See [`docs/phases/phase-4-ui.md`](../docs/phases/phase-4-ui.md) for the full Pha
 open-routing-service-ui/
 ├── package.json            # Vite 6, React 19, TS 5.7, Tailwind v4, Vitest 2.1, Playwright 1.49
 ├── src/
-│   ├── api/                # closestFacilityClient.ts, nominatimClient.ts
+│   ├── api/                # closestFacilityClient.ts, photonGeocoderApi.ts, nominatimClient.ts
 │   ├── components/         # Map/, Widget/, ResultsList/, Common/ — each w/ index.ts barrel
 │   ├── hooks/              # useMapLibre.ts — owns Map instance lifecycle
 │   ├── store/              # searchStore.ts — headless Zustand v5 w/ configureSearchStore(client)
@@ -51,7 +52,8 @@ All `VITE_*` vars are baked at build time (Vite convention).
 | Name | Default | Purpose |
 |------|---------|---------|
 | `VITE_API_BASE_URL` | `http://localhost:58000` | open-routing-service URL |
-| `VITE_NOMINATIM_BASE_URL` | `http://localhost:7070` | Nominatim — browser-direct |
+| `VITE_NOMINATIM_BASE_URL` | `http://localhost:7070` | Nominatim — browser-direct (reverse/forward helper; not autocomplete) |
+| `VITE_PHOTON_URL` | `https://photon.komoot.io` | Photon geocoder for address autocomplete — browser-direct; self-host via the infra `photon` profile |
 | `VITE_TILE_URL` | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | Basemap tiles |
 | `VITE_DEFAULT_CENTER` | `32.7157,-117.1611` | Initial map center (lat,lon) |
 | `VITE_DEFAULT_ZOOM` | `12` | Initial zoom |

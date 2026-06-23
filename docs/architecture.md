@@ -16,16 +16,17 @@ title open-network-solver — System context (C4 L1)
 Person(dispatcher, "Dispatcher", "Emergency-services analyst answering 'what's the nearest unit?' for any incident.")
 System(ons, "open-network-solver", "Closest-facility routing over OSM + pgRouting.")
 System_Ext(osm, "OpenStreetMap (Geofabrik)", "PBF extracts — road network + tagged facilities.")
-System_Ext(nom, "Nominatim", "Address search; queried directly from the browser.")
+System_Ext(photon, "Photon", "Address autocomplete (search-as-you-type); queried directly from the browser.")
+System_Ext(nom, "Nominatim", "Reverse/forward geocode helper; queried directly from the browser.")
 System_Ext(tiles, "Basemap tiles", "Raster (dev) or vector (prod) tiles.")
 Rel(dispatcher, ons, "HTTPS — single-page app")
 Rel(ons, osm, "Monthly PBF download (ETL)")
-Rel(dispatcher, nom, "GET /search (direct from browser)")
+Rel(dispatcher, photon, "GET /api?q= (autocomplete, direct from browser)")
 Rel(dispatcher, tiles, "GET tiles (direct from browser)")
 ```
 
-The dispatcher uses one UI; the UI talks **direct** to Nominatim and the tile
-service. The routing service handles only routing.
+The dispatcher uses one UI; the UI talks **direct** to Photon (address
+autocomplete) and the tile service. The routing service handles only routing.
 
 ---
 
@@ -38,17 +39,18 @@ title Containers
 Person(dispatcher, "Dispatcher")
 Container_Boundary(ons, "open-network-solver") {
     Container(ui, "open-routing-service-ui", "React 19 + Vite + MapLibre", "SPA with search widget + map + ranked results.")
-    Container(api, "open-routing-service", "FastAPI + asyncpg", "POST /v1/closest-facility, /readyz, /metrics, /v1/etl-status.")
+    Container(api, "open-routing-service", "FastAPI + asyncpg", "POST /v1/closest-facility, GET /v1/facility-categories, /readyz, /metrics, /v1/etl-status.")
     Container(etl, "ETL job", "Python + osmconvert + osm2pgrouting", "Idempotent, staging-then-swap PBF importer.")
     ContainerDb(pg_primary, "Postgres primary", "pgRouting 3.7 + PostGIS 3.6", "Writes only. routing schema + etl_runs + function_version.")
     ContainerDb(pg_replica, "Postgres replica", "Streaming hot-standby", "All routing reads. pg_is_in_recovery()=t.")
-    ContainerDb(redis, "Redis", "redis:7-alpine", "Best-effort cache for closest_facility responses.")
+    ContainerDb(redis, "Redis", "redis:7-alpine", "Best-effort cache — cf:* closest_facility responses + cfc:* facility-category summaries.")
 }
+Container_Ext(photon, "Photon", "Self-hostable OSM geocoder (autocomplete)")
 Container_Ext(nom, "Nominatim", "Mediawiki Nominatim")
 Container_Ext(tiles, "Tile server", "OSM raster or tileserver-gl")
 Rel(dispatcher, ui, "HTTPS")
-Rel(ui, api, "POST /v1/closest-facility, GET /readyz")
-Rel(ui, nom, "GET /search")
+Rel(ui, api, "POST /v1/closest-facility, GET /v1/facility-categories, GET /readyz")
+Rel(ui, photon, "GET /api?q= (maplibre-gl-geocoder)")
 Rel(ui, tiles, "GET /{z}/{x}/{y}.png|pbf")
 Rel(api, redis, "GET/SET cf:* keys")
 Rel(api, pg_replica, "SELECT closest_facility(...)")
@@ -92,6 +94,13 @@ sequenceDiagram
         API-->>UI: 200 {cache_hit:false, results:[...]}
     end
 ```
+
+Each result item carries the route as a GeoJSON `LineString` **and** the
+facility as an RFC 7946 GeoJSON `Feature` (`facility_geojson`: Point geometry +
+`properties` `facility_id`/`name`/`category`/`tags`). The UI renders a
+category-specific symbol at the facility point and a thin **dashed access-leg**
+from the route's graph-terminal vertex to that point (client-side; the route
+ends at the snapped vertex, the facility sits up to the snap distance away).
 
 Error mapping:
 
@@ -172,12 +181,23 @@ erDiagram
         geometry geom
         bigint nearest_vertex_id FK
     }
+    FACILITY_CATEGORIES {
+        text category PK
+        bigint count
+    }
     WAYS }o--|| WAYS_VERTICES_PGR : "source/target"
     FACILITIES }o--|| WAYS_VERTICES_PGR : "snapped to"
 ```
 
 The `closest_facility(geom, buffer_m, jsonb_filter, k, mode)` PL/pgSQL
-function runs entirely against `ways`, `ways_vertices_pgr`, and `facilities`.
+function runs entirely against `ways`, `ways_vertices_pgr`, and `facilities`,
+projecting each facility's `name`, stored `category`, `tags`, and `geom`
+alongside the route. The stored `category` column is populated at ETL
+write-time by the `IMMUTABLE` `public.facility_category(tags)` helper (backfilled
+by migration for existing rows). `routing.facility_categories` is a precomputed
+summary `(category, count)` built in the staging schema and swapped in
+atomically — `GET /v1/facility-categories` reads it directly (no per-request
+catalog scan) to drive the data-driven facility-type filter.
 
 ---
 
@@ -189,7 +209,7 @@ function runs entirely against `ways`, `ways_vertices_pgr`, and `facilities`.
 | Latency (p95) | 200 ms cached / 800 ms uncached at 100 RPS (Phase 3 gate); 300 ms / 1 s at 500 RPS (Phase 5 gate). |
 | Durability | Postgres WAL on primary + streaming replica; ETL is fully reproducible from a PBF + sha. |
 | Cache failure | Best-effort — outage degrades latency, not correctness. |
-| Geocoding failure | Browser-direct (D6) — only address-search UX is affected. |
+| Geocoding failure | Browser-direct (D6) — only address-autocomplete UX is affected; map-click + routing keep working. |
 | Data freshness | Monthly PBF ETL; staleness alert at 45 days. |
 | Observability | JSON logs with request_id, Prometheus metrics, Grafana dashboard, /readyz contract. |
 | Security | Non-root containers, no secrets in git, CORS allow-list per env, SlowAPI per-IP rate-limit, `pip-audit` + `npm audit` in CI. |
@@ -206,7 +226,8 @@ function runs entirely against `ways`, `ways_vertices_pgr`, and `facilities`.
 | Zustand | Minimal, no boilerplate, no Provider tree | Redux ToolKit overkill for a single search-flow store |
 | Tailwind v4 + CSS variables for tokens | CSS-first config, no JS theme bridge | Styled-components adds runtime overhead |
 | Staging-then-swap ETL | Atomic, no stale-cache window | In-place updates require complex invalidation |
-| Browser-direct Nominatim | Routing stays UP if Nominatim is down | Proxying through the API couples two failure modes |
+| maplibre-gl-geocoder + Photon (autocomplete) | Library owns debounce/a11y/keyboard; Photon is OSS + self-hostable + autocomplete-friendly | Nominatim public policy forbids autocomplete; hand-rolled search duplicates the library |
+| Browser-direct geocoder | Routing stays UP if the geocoder is down | Proxying through the API couples two failure modes |
 | No MCP in v1 | Browser is the only client | MCP adds surface area with no near-term consumer |
 
 ---

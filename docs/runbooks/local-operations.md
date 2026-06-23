@@ -53,6 +53,7 @@ docker run --rm -v open-network-solver_osm-data:/data \
 | Postgres replica | `ons-postgres-replica` | `pgrouting/pgrouting:16-3.5-3.7.3` | **55433** | `replica`, `service` |
 | Redis | `ons-redis` | `redis:7-alpine` | **56379** | default |
 | Nominatim | `ons-nominatim` | `mediagis/nominatim:4.5` | **58080** | `nominatim`, `service` |
+| Photon (geocoder) | `ons-photon` | `rtuszik/photon-docker:latest` | **52322** | `photon` |
 | ETL (one-shot) | `ons-etl` | `ons-etl:dev` (built) | — | `etl` |
 | Routing API | `ons-routing-service` | `ons-routing-service:dev` (built) | **58000** | `service` |
 | Routing UI | `ons-routing-ui` | `ons-routing-ui:dev` (built) | **58081** | `service`, `ui` |
@@ -106,10 +107,15 @@ psql "postgres://routing:${POSTGRES_PASSWORD}@localhost:55432/routing" \
 
 ```sh
 redis-cli -p 56379 PING                       # PONG
-redis-cli -p 56379 --scan --pattern 'cf:*' | head
+redis-cli -p 56379 --scan --pattern 'cf:*' | head     # closest-facility responses
+redis-cli -p 56379 --scan --pattern 'cfc:*' | head    # facility-category summaries
 redis-cli -p 56379 DBSIZE
 redis-cli -p 56379 INFO memory | grep used_memory_human
 ```
+
+> Both `cf:*` and `cfc:*` are best-effort caches keyed by `function_version`.
+> The ETL atomic swap deletes both namespaces on success, so a re-ETL never
+> serves stale routes or category counts.
 
 ---
 
@@ -154,6 +160,23 @@ docker compose --env-file infra/.env -f infra/docker-compose.yml \
 docker compose --env-file infra/.env -f infra/docker-compose.yml \
   --profile etl --profile service --profile ui --profile observability up -d
 ```
+
+### 5.6 Self-host the Photon geocoder (optional)
+
+Address autocomplete defaults to the public Photon demo
+(`https://photon.komoot.io`). To run it locally instead, start the `photon`
+profile and point the UI build at it:
+
+```sh
+# PHOTON_COUNTRY_CODE picks a country extract (e.g. us); empty = full planet.
+PHOTON_COUNTRY_CODE=us \
+docker compose --env-file infra/.env -f infra/docker-compose.yml \
+  --profile photon up -d photon
+# Then build the UI with UI_PHOTON_URL=http://localhost:52322 (see infra/.env.example).
+```
+
+The geocoder is browser-direct (design D6): if Photon is down, address
+autocomplete degrades but map-click + routing keep working.
 
 ### 5.6 Tear down
 
